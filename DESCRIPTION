@@ -1,0 +1,20 @@
+Package: fauxcurrence
+Title: Make Null Species Distributions
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Owen",
+           family = "Osborne",
+           role = c("aut", "cre"),
+           email = "o.osborne@bangor.ac.uk",
+           comment = c(ORCID = "0000-0002-1213-1169"))
+Description: The package can be used to generate a set of occurrences (long & lat coordinates) for one or more species with a spatial structure (intra and interspecies distances) matching that of an observed set of coordinates.
+Depends: R (>= 3.5.0), geosphere
+Imports: raster, gdistance, txtplot, distRcpp
+Remotes: github::btskinner/distRcpp
+License: GPL-3
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.1
+Author: Owen Osborne <o.osborne@bangor.ac.uk>
+Maintainer: Owen Osborne <o.osborne@bangor.ac.uk>
