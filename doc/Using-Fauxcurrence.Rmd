@@ -1,0 +1,180 @@
+---
+title: "Using Fauxcurrence"
+author: "Owen G. Osborne"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Using Fauxcurrence}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+
+## Introduction
+
+Defining appropriate null expectations for species distribution hypotheses is important because sampling bias and spatial autocorrelation can produce realistic, but ecologically meaningless, geographic patterns. Fauxcurrence is a package developed to help deal with this problem, by producing sets of randomised species occurrences (long & lat coordinates) for one or more species with a spatial structure (within- and between-species distances) matching that of an observed set of coordinates. These can then be used to define null expectations for hypothesis testing in spatial ecology and biogeography. For example, fauxcurrence can be used to determine if niche overlap between species is significantly different from null expectations, by comparing the observed level of niche overlap with that of many fauxcurrence replicates generated to mimic the observed spatial structure (but not taking into account the environmental variables which define the species' niches). 
+
+In this tutorial I show the basic working of the package.
+
+## Loading package and example datasets
+
+We start by loading fauxcurrence as well as the package [raster](https://CRAN.R-project.org/package=raster) which we'll use to plot our results.
+
+```{r setup}
+library(fauxcurrence)
+library(raster)
+```
+
+The package takes two types of input data, a raster which defines the study area, and a data frame of occurrence data. We will first load an example dataset containing four species of Madagascan chameleons of the genus *Furcifer* (*F. antimena*, *F. oustaleti*, *F. petteri* and *F. rhinoceratus*) taken from [Pearson & Raxworthy (2009)](https://pubmed.ncbi.nlm.nih.gov/19210532/) and a raster defining the extent of Madagascar.
+
+```{r}
+data(chameleons)
+data(madagascar)
+```
+
+The chameleons dataset is a data frame containing three columns: "x" (longitude), "y" (latitude) and "species", with one row for each occurrence point.
+
+```{r}
+head(chameleons)
+```
+
+Input data must always follow this format unless there is only one species, in which case the "species" column can be omitted.
+
+We can look at the data on the map as follows:
+
+```{r, fig.dim = c(6, 7), out.extra = 'style="border:0"'}
+# set up a colour palette to represent the species
+my.cols <- rainbow(length(unique(chameleons$species)))
+names(my.cols) <- sort(unique(chameleons$species))
+# plot the raster of madagascar
+plot(madagascar,col=c("white","gray85"),box=F,axes=F,legend=F)
+# plot the points and a legend
+points(chameleons,bg=my.cols[chameleons$species],pch=21)
+legend("bottomright",legend=names(my.cols), pt.bg=my.cols,pch=21)
+```
+
+## Running fauxcurrence
+
+The basic functioning of the algorithm is shown in the flowchart below. First, one simulated occurrence point is generated per species. Occurrence points are added for each species by drawing each new point *D* distance away from a random existing conspecific point (where *D* is sampled from the empirical distribution function of observed within-species distances) until each species has the same number of occurrences as in the observed dataset. The algorithm ensures that all points are within the observed range of distances during these steps. Once the set of simulated points are generated, the fit of their spatial structure to that of the observed points is iteratively improved. For each iteration, one point is replaced and the match between null and observed interpoint distances is evaluated using discrete [Kullback-Leibler](https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence) (KL) divergence. The change is only retained if it improves (lowers) the KL divergence. This process is then repeated until either no improvement has been made for a user-defined number of iterations (```div.n.flat```), or a maximum iteration limit is reached (```iter.max.stg3```).
+
+```{r, out.width = "50%", echo = FALSE, out.extra = 'style="border:0"'}
+knitr::include_graphics("flowchart.png")
+```
+
+
+Fauxcurrence uses pseudorandomisation so, for the purposes of this vignette, we will first set a seed for random number generation. This means the results will be identical to when I tested it, so they can be discussed in detail. 
+
+NOTE: If you want results of a set of fauxcurrence runs to be reproducible, set a seed before running it (i.e. once at the start of your script), although don't use the same seed for different runs with the same data and settings or the results will be the same! See [Random](https://stat.ethz.ch/R-manual/R-devel/library/base/html/Random.html) for more details.
+
+```{r}
+set.seed(1234)
+```
+
+Fauxcurrence currently has three main modes of operation, distinguished by how inter-point distances are used to define spatial structure. Within-species distances (divided into one subset per species) are always included and can also be used alone, which we refer to as the *intra* model. Because only within-species distances are used in this model, within-species spatial structure is preserved but between-species spatial structure is not. To run this model we just need to provide a set of coordinates and a raster.
+
+```{r}
+faux_intra <- fauxcurrence(coords = chameleons, rast = madagascar)
+```
+
+The output to the console provides a lot of information (which can be turned off with ```verbose = FALSE``` or can be sent to a log file with ```logfile = my_logfile.txt```, which can be useful when running it multiple times in parallel). 
+
+The function first prints the options used and then prints information about the run. 
+
+The information about initial point generation can usually be ignored, unless the time taken is especially long or the number of restarts is high, which may happen with large numbers of species. In this case, adjusting ```iter.max.stg1``` and ```iter.max.stg2``` can both speed up the run time (some trial and error may be necessary). 
+
+It then prints information about the iterative improvement stage of the algorithm, including computational time, number of iterations and a simple plot of the improvement of the fit between observed and simulated spatial structures. The most important imformation to note is whether the divergence statistic has minimised (i.e. whether the curve has gone flat). If it hasn't, ```div.n.flat``` should be increased and the algorithm should be re-run. If ```div.n.flat``` has not been reached before the maximum number of iterations has been reached, the function prints a warning. In this case, ```iter.max.stg3``` should be increased.
+
+The value of the function is a list with the following structure:
+
+```{r}
+str(faux_intra)
+```
+
+The main result is contained in faux_intra$points, which has the same format as the input coordinates: 
+
+```{r}
+head(faux_intra$points)
+```
+
+The other elements contain the interpoint distances in the input ("dist.obs") and simulated ("dist.sim") datasets, and the divergence statistics across iterations (div.vecs). And additional elements can be output using the ```ret.seed.points``` and ```ret.all.iter``` options (see manual).
+
+Now we can plot the simulated occurrences next to the real data.
+
+```{r, fig.dim = c(6, 8), out.extra = 'style="border:0"'}
+# set the plotting device to use two panels so we can display the observed and simulated data together
+par(mfrow=c(1,2))
+# plot the raster of madagascar
+plot(madagascar,col=c("white","gray85"),box=F,axes=F,legend=F,main="observed")
+# plot the original points 
+points(chameleons,bg=my.cols[chameleons$species],pch=21)
+# plot the raster of madagascar
+plot(madagascar,col=c("white","gray85"),box=F,axes=F,legend=F,main="intra")
+# plot the simulated points and a legend
+points(faux_intra$points,bg=my.cols[faux_intra$points$species],pch=21)
+legend("bottomright",legend=names(my.cols), pt.bg=my.cols,pch=21)
+```
+
+The spatial structure within species is similar to the real data, but because the *intra* model doesn't use between-species distances, some species are closer or further from heterospecifics than in the real data, for example, *F. antimena* has far more points in close proximity to it than in the real data. 
+
+We will now set ```inter.spp = TRUE``` to run the *inter* model, which includes a set of general interspecific distances for each species (i.e., the distances from a species’ occurrence points to all heterospecific occurrence points).
+
+NOTE: this will take around a minute to run
+
+```{r, fig.dim = c(6, 7), out.extra = 'style="border:0"'}
+# set seed
+set.seed(4321)
+# run fauxcurrence 
+faux_inter <- fauxcurrence(coords = chameleons, rast = madagascar, inter.spp = TRUE, verbose=FALSE)
+# set the plotting device to use two panels so we can display the observed and simulated data together
+par(mfrow=c(1,2))
+# plot the raster of madagascar
+plot(madagascar,col=c("white","gray85"),box=F,axes=F,legend=F,main="observed")
+# plot the original points 
+points(chameleons,bg=my.cols[chameleons$species],pch=21)
+# plot the raster of madagascar
+plot(madagascar,col=c("white","gray85"),box=F,axes=F,legend=F,main="inter")
+# plot the simulated points and a legend
+points(faux_inter$points,bg=my.cols[faux_inter$points$species],pch=21)
+legend("bottomright",legend=names(my.cols), pt.bg=my.cols,pch=21)
+```
+
+Now the general interspecific distances are more similar to the observed data, although distance relationships between specific pairs of species are not preserved, for example, *F. petteri* is much closer to *F. rhinoceratus* in this simulation than in the real data.
+
+We will now set ```sep.inter.spp = TRUE``` to run the *inter-sep* model. Instead of using a set of general interspecific distances for each species, it uses a set of interspecific distances for each pair of species.
+
+```{r, fig.dim = c(6, 7), out.extra = 'style="border:0"'}
+# set seed
+set.seed(54321)
+# run fauxcurrence 
+faux_interSep <- fauxcurrence(coords = chameleons, rast = madagascar, inter.spp = TRUE, sep.inter.spp = TRUE, verbose=FALSE)
+# set the plotting device to use two panels so we can display the observed and simulated data together
+par(mfrow=c(1,2))
+# plot the raster of madagascar
+plot(madagascar,col=c("white","gray85"),box=F,axes=F,legend=F,main="observed")
+# plot the original points 
+points(chameleons,bg=my.cols[chameleons$species],pch=21)
+# plot the raster of madagascar
+plot(madagascar,col=c("white","gray85"),box=F,axes=F,legend=F,main="inter-sep")
+# plot the simulated points and a legend
+points(faux_interSep$points,bg=my.cols[faux_interSep$points$species],pch=21)
+legend("bottomright",legend=names(my.cols), pt.bg=my.cols,pch=21)
+```
+
+We can see that the pairwise between-species structure is now preserved, although points are in different positions to those in the real dataset. 
+
+## Using fauxcurrence in practice
+
+Most practical uses of fauxcurrence involve creating multiple (e.g. 100) independent replicates, and then comparing some statistic (e.g. niche overlap, fit of a species distribution model, overlap of species range boundaries and some geographic feature) between observed and simulated datasets. Running multiple independent runs can be time consuming, so we recommend using the [foreach](https://cran.r-project.org/web/packages/foreach/) package to parallelise independent runs. 
+
+Which model to use (i.e. *intra*, *inter* or *inter-sep*) depends entirely on the research question. For example, if you wanted to determine whether range overlap between two species on an island differed from the null expectation given the size of the island and the range size of each species you may want to use the *intra* model, since the other two would preserve the observed range overlap and thus wouldn't be informative. Alternatively, if you wanted to determine whether the correlation between a species' presence and some environmental variable was greater than expected by chance given its within-species spatial structure and its proximity to other species (which may restrict its range via interspecific competition or predation), then the *inter* or *inter-sep* models would be appropriate. 
+
+In general, fauxcurrence-generated occurrences could be used in any theoretical biogeographical application where realistic occurrences of species and clades are required.
+
+

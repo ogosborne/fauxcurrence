@@ -8,7 +8,7 @@ fauxcurrence(
   coords,
   rast,
   distmat = NULL,
-  use.distmat = TRUE,
+  use.distmat = FALSE,
   inter.spp = FALSE,
   sep.inter.spp = FALSE,
   fix.seed.pts = NULL,
@@ -16,7 +16,7 @@ fauxcurrence(
   allow.ident.conspec = FALSE,
   dist_meth = "distRcpp",
   dist_fun = "Haversine",
-  trim.init.range = TRUE,
+  trim.init.range = FALSE,
   init.range = 0.9,
   new.pt.meth.stg.2 = "dist.dens",
   new.pt.meth.stg.3 = "dist.dens",
@@ -65,11 +65,11 @@ fauxcurrence(
 
 \item{switch.n}{An integer defining the number of changes which are made in each iteration of the the stage 3 iterative improvement procedure. Recommendation is to leave at 1.}
 
-\item{iter.max.stg1}{The maximum number of iterations with no improvement before stage 1 is restarted.}
+\item{iter.max.stg1}{The maximum number of iterations with no improvement during stage 1 before initial point generation is restarted.}
 
-\item{iter.max.stg2}{As with iter.max.stg1 but for stage 2.}
+\item{iter.max.stg2}{The maximum number of iterations with no improvement during stage 2 before initial point generation is restarted.}
 
-\item{iter.max.stg3}{The maximum number of iterations for the the stage 3 iterative improvement procedure before the algorithm is stopped if div.n.flat is not reached.}
+\item{iter.max.stg3}{The maximum number of iterations for the the stage 3 iterative improvement procedure before the algorithm is stopped if div.n.flat has not been reached.}
 
 \item{div.int}{Integer indicating the interval at which to record divergence values during the stage 3 iterative improvement procedure, so that the trace can be examined to determine if it has minimised.}
 
@@ -101,7 +101,7 @@ This function generates a set of randomised occurrences (long & lat coordinates)
 \details{
 Within-species distances are always used. If inter.spp is TRUE, it also uses interspecies distances, and if sep.inter.spp is TRUE it separates interspecific distances into all pairwise sets of species. Thus, occurrences for each species can be simulated independently (inter.spp=FALSE, sep.inter.spp=FALSE), general distance to heterospecifics can be taken into account (inter.spp=TRUE, sep.inter.spp=FALSE), or distance relationships between individual pairs of species can be preserved (inter.spp=TRUE, sep.inter.spp=TRUE).
 
-The algorithm starts by generating an initial set of randomised occurrences which fit within the ranges of observed interpoint distances. There are two stages to this process. In stage 1, it places one point for each species on the map provided with rast and, if inter.spp is TRUE, checks that the distances between species are within the observed range (or within the central init.range quantile of the real distribution if trim.init.range is TRUE). If interspecific distances are outside the real distribution (or init.range), it iteratively improves the initial points by randomly replacing a point and rechecking the distances until they are within the desired range. If fix.seed.pts is provided, stage 1 is skipped and these points are used instead. The points in fix.seed.points are not replaced in later stages of the algorithm, so they can be used to define the rough centroids of the species distributions. In stage 2, more points are added (using the method set by new.pt.meth.stg.2) until the correct number of points for each species is reached. As with stage 1, after each point is added, distances are checked to ensure they are within the observed range of distances. To stop stages 1 and 2 becoming stuck with a previous set of points which make step-wise iterative improvement impossible, iter.max.stg1 and iter.max.stg2 set an upper limit on the number of iterations without improvement, if these are reached the stage starts again.
+The algorithm starts by generating an initial set of randomised occurrences which fit within the ranges of observed interpoint distances. There are two stages to this process. In stage 1, it places one point for each species on the map provided with rast and, if inter.spp is TRUE, checks that the distances between species are within the observed range (or within the central init.range quantile of the real distribution if trim.init.range is TRUE). If interspecific distances are outside the real distribution (or init.range), it iteratively improves the initial points by randomly replacing a point and rechecking the distances until they are within the desired range. If fix.seed.pts is provided, stage 1 is skipped and these points are used instead. The points in fix.seed.points are not replaced in later stages of the algorithm, so they can be used to define the rough centroids of the species distributions. In stage 2, more points are added (using the method set by new.pt.meth.stg.2) until the correct number of points for each species is reached. As with stage 1, after each point is added, distances are checked to ensure they are within the observed range of distances. To stop stages 1 and 2 becoming stuck with a previous set of points which make step-wise iterative improvement impossible, iter.max.stg1 and iter.max.stg2 set an upper limit on the number of iterations without improvement. If these are reached, initial point generation is restarted.
 
 The algorithm then implements an iterative improvement procedure to improve the similarity of the spatial structure between the observed and simulated points. For each iteration, one (or several if switch.n > 1) change(s) is made to the points. This consists of randomly replacing a point (using the method set by new.pt.meth.stg.3) and, if the change improves the match of the spatial structure between the null and observed points, it is kept. If the match is not improved, it is discarded and the original is retained. This procedure is repeated a for a user-defined number of iterations until either no improvement has been made for div.n.flat iterations or the total number of iterations has reached iter.max.stg3. The match between spatial structures is evaluated using the probability distribution of the interpoint distances. The comparison is made using the discrete version of the Kullback-Leibler divergence, where smaller values indicate a better match between the simulated and observed points. Since there are multiple interpoint distance distributions (i.e. intra- and inter-specific distances for multiple species or pairs of species), a weighted mean of divergence statistics across all distance distributions is used, weighted such that interpoint and intrapoint distances contribute equally. The divergence statistic should be plotted against number of iterations to ensure the statistic has been minimised (i.e. the curve has gone flat), a basic ASCII plot showing N iterations vs divergence is printed to the console (or to a log file if logfile!=NULL) if verbose == TRUE.
 }
