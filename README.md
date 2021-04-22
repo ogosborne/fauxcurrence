@@ -7,3 +7,12 @@ To install, use:
 ```R
 devtools::install_github("ogosborne/fauxcurrence")
 ```
+
+To learn more, see the man pages and run the example in the vignette:
+
+```R
+library(fauxcurrence)
+?fauxcurrence
+?make.distmat
+vignette("Using-Fauxcurrence")
+```

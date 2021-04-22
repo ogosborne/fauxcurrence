@@ -1,6 +1,6 @@
 Package: fauxcurrence
 Title: Make Null Species Distributions
-Version: 0.0.0.9000
+Version: 1.0.0
 Authors@R: 
     person(given = "Owen",
            family = "Osborne",
@@ -18,3 +18,7 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.1
 Author: Owen Osborne <o.osborne@bangor.ac.uk>
 Maintainer: Owen Osborne <o.osborne@bangor.ac.uk>
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
