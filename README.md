@@ -5,14 +5,19 @@ This R package generates sets of randomised occurrences (long & lat coordinates)
 To install, use:
 
 ```R
-devtools::install_github("ogosborne/fauxcurrence")
+devtools::install_github("ogosborne/fauxcurrence",build_vignettes = TRUE)
 ```
 
 To learn more, see the man pages and run the example in the vignette:
 
 ```R
+# load fauxcurrence
 library(fauxcurrence)
+
+# view manual files
 ?fauxcurrence
 ?make.distmat
+
+# view vignette
 vignette("Using-Fauxcurrence")
 ```
