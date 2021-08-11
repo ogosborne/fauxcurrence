@@ -1,6 +1,6 @@
 Package: fauxcurrence
 Title: Make Null Species Distributions
-Version: 1.0.0
+Version: 1.1.0
 Authors@R: 
     person(given = "Owen",
            family = "Osborne",

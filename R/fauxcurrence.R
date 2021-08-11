@@ -114,6 +114,8 @@ get_dists_from_mat <- function(mat,indices,species.vec,inter.spp=TRUE,sep.inter.
 #' @param dist_fun A string indicating the distance function to be used for distance calculations by geosphere::distm (if dist_meth is "distm") or distRcpp::dist_mtom (if dist_methis "distRcpp"). For dist_meth=="distRcpp", this should either be "Haversine" or "Vincenty". For dist_meth=="distm", it can be the name of any loaded function which takes the same input and produces the same output as geosphere::distHaversine.
 #' @param trim.init.range Logical indicating whether the initial points generated in stage 1 should be within the central init.range quantile of the observed distribution rather than just the total range. This can speed up stage 2, especially if many species are present.
 #' @param init.range Numeric between 0 and 1 defining the central range to constrain initial points to if trim.init.range is TRUE.
+#' @param stg.1.only Produce only one point per species and skip full initial point set generation and iterative improvement.
+#' @param stg.2.only Produce only the full initial set of points and skip iterative improvement.
 #' @param new.pt.meth.stg.2 String indicating the method of sampling a new point in stage 2. Either "sample", which samples a random point from the raster; "dist.obs" which randomly chooses an existing point and places a new point of the same species \emph{D} distance away, where \emph{D} is sampled from the observed intraspecific distances for that species; or "dist.dens" (recommended) which is similar to dist.obs but \emph{D} is sampled from a density object constructed from the observed intraspecific distances for that species.
 #' @param new.pt.meth.stg.3 As with new.pt.meth.stg.2 but for stage 3.
 #' @param switch.n An integer defining the number of changes which are made in each iteration of the the stage 3 iterative improvement procedure. Recommendation is to leave at 1.
@@ -149,7 +151,7 @@ get_dists_from_mat <- function(mat,indices,species.vec,inter.spp=TRUE,sep.inter.
 #' my.sim <- fauxcurrence(coords=my.coords,rast=my.raster,inter.spp=TRUE)
 #' }
 #' @export
-fauxcurrence <-function(coords,rast,distmat=NULL,use.distmat=FALSE,inter.spp=FALSE,sep.inter.spp=FALSE,fix.seed.pts=NULL,div.n.flat=1000,allow.ident.conspec=FALSE,dist_meth="distRcpp",dist_fun="Haversine",trim.init.range=FALSE,init.range=0.9,new.pt.meth.stg.2="dist.dens",new.pt.meth.stg.3="dist.dens",switch.n=1,iter.max.stg1=10000,iter.max.stg2=2000,iter.max.stg3=100000,div.int=10,break.num=20,ret.seed.pts=FALSE,ret.all.iter=FALSE,logfile=NULL,verbose=TRUE) {
+fauxcurrence <-function(coords,rast,distmat=NULL,use.distmat=FALSE,inter.spp=FALSE,sep.inter.spp=FALSE,fix.seed.pts=NULL,div.n.flat=1000,allow.ident.conspec=FALSE,dist_meth="distRcpp",dist_fun="Haversine",trim.init.range=FALSE,init.range=0.9,stg.1.only=FALSE,stg.2.only=FALSE,new.pt.meth.stg.2="dist.dens",new.pt.meth.stg.3="dist.dens",switch.n=1,iter.max.stg1=10000,iter.max.stg2=2000,iter.max.stg3=100000,div.int=10,break.num=20,ret.seed.pts=FALSE,ret.all.iter=FALSE,logfile=NULL,verbose=TRUE) {
   # record start time
   start_time <- Sys.time()
   # start outputting to logfile if provided
@@ -209,6 +211,8 @@ fauxcurrence <-function(coords,rast,distmat=NULL,use.distmat=FALSE,inter.spp=FAL
     cat("   switch.n:",switch.n,"\n")
     cat("   trim.init.range:",trim.init.range,"\n")
     cat("   init.range:",init.range,"\n")
+    cat("   stg.1.only:",stg.1.only,"\n")
+    cat("   stg.2.only:",stg.2.only,"\n")
     cat("   break.num:",break.num,"\n\n")
     cat("Output options:\n")
     cat("   div.int:",div.int,"\n")
@@ -260,7 +264,7 @@ fauxcurrence <-function(coords,rast,distmat=NULL,use.distmat=FALSE,inter.spp=FAL
   } else {
     dist.orig <- get_dists(coords=coords,species.vec=species.vec,dist_meth=dist_meth,dist_fun=dist_fun,inter.spp=inter.spp,sep.inter.spp=sep.inter.spp,combs=combs)
   }
-  out[["dist.obs"]] <-  dist.orig
+  if(stg.1.only == FALSE) out[["dist.obs"]] <-  dist.orig
   # if either new.pt.meth is "dist.dens", make density objects for each sample
   if(new.pt.meth.stg.2 == "dist.dens" | new.pt.meth.stg.3 == "dist.dens"){
     dist.dens.orig <- list()
@@ -379,120 +383,125 @@ fauxcurrence <-function(coords,rast,distmat=NULL,use.distmat=FALSE,inter.spp=FAL
       if(verbose) cat("Stage 1: initial seed points taken from fix.seed.pts")
     }
     ######## STAGE 1 END
-    ########  STAGE 2
-    # This loop adds new points until the correct number of points for each species has been generated
-    # get number of points for each species
-    len.sp <- list()
-    for(sp in species){
-      len.sp[[sp]] <- length(which(species.vec == sp))
-    }
-    # make pts and pts.species vectors the right size
-    if(use.distmat){
-      pts <- c(pts,rep(NA,nrow(coords)-length(pts)))
+    if(stg.1.only){
+      cat("\nSkipping stage 2: full seed point generation.\n")
+      break
     } else {
-      pts <- rbind(pts,matrix(NA,nrow=nrow(coords)-nrow(pts),ncol=2))
-    }
-    pts.species <- c(pts.species,rep(NA,nrow(coords)-length(pts.species)))
-    iter.unchanged <- 0
-    restart<- FALSE
-    while(length(which(is.na(pts.species))) > 0){
-      # if maximum iterations for stage 2 has been reached, break the loop so the algorithm can restart initial point generation
-      if(iter.unchanged > iter.max.stg2){
-        restart <- TRUE
+      ########  STAGE 2
+      # This loop adds new points until the correct number of points for each species has been generated
+      # get number of points for each species
+      len.sp <- list()
+      for(sp in species){
+        len.sp[[sp]] <- length(which(species.vec == sp))
+      }
+      # make pts and pts.species vectors the right size
+      if(use.distmat){
+        pts <- c(pts,rep(NA,nrow(coords)-length(pts)))
+      } else {
+        pts <- rbind(pts,matrix(NA,nrow=nrow(coords)-nrow(pts),ncol=2))
+      }
+      pts.species <- c(pts.species,rep(NA,nrow(coords)-length(pts.species)))
+      iter.unchanged <- 0
+      restart<- FALSE
+      while(length(which(is.na(pts.species))) > 0){
+        # if maximum iterations for stage 2 has been reached, break the loop so the algorithm can restart initial point generation
+        if(iter.unchanged > iter.max.stg2){
+          restart <- TRUE
+          break
+        }
+        #sample random species
+        sp <- sample(species,1)
+        # skip if enough points have already been generated for the species
+        if(length(which(pts.species == sp)) == len.sp[[sp]]) next
+        # for "dist.obs" or "dist.dens" get an orig.pt and distance
+        if(new.pt.meth.stg.2 == "dist.obs" | new.pt.meth.stg.2 == "dist.dens"){
+          # sample a random starting point from pts, if there is only one then use that rather than attempting to pick one with sample.
+          if(use.distmat){
+            if(length(which(pts.species == sp)) == 1){
+              orig.pt <- pts[which(pts.species == sp)]
+            } else {
+              orig.pt <- pts[sample(which(pts.species == sp),1)]
+            }
+          } else {
+            if(length(which(pts.species == sp)) == 1){
+              orig.pt <- pts[which(pts.species == sp),]
+            } else {
+              orig.pt <- pts[sample(which(pts.species == sp),1),]
+            }
+          }
+          # if not using distmat, sample random bearing
+          if(!use.distmat) bear<-runif(1,0,360)
+          # sample intraspecific distance from real intraspecific distances, either from the vector of distances for "dist.obs", or from the density object for "dist.dens"
+          if(new.pt.meth.stg.2 == "dist.obs"){
+            new.dist <- sample(dist.orig[[paste("intra",sp,sep="_")]],1)
+          } else if (new.pt.meth.stg.2 == "dist.dens"){
+            new.dist <- sample(dist.orig[[paste("intra",sp,sep="_")]],1) + rnorm(1,0,dist.dens.orig[[paste("intra",sp,sep="_")]]$bw)
+          }
+          # generate new point
+          if(use.distmat){
+            # generate a new point by finding the point in distmat whos distance from orig.pt is most similar to new.dist, ties are broken at random.
+            new.pt <- max.col(matrix(0-abs(new.dist - distmat[orig.pt,]),nrow=1))
+          } else {
+            new.pt <- geosphere::destPoint(p=orig.pt,b=bear,d=(new.dist))
+          }
+          # if new.pt.meth.stg.2 == "sample", just sample a random point from the raster
+        } else if (new.pt.meth.stg.2 == "sample"){
+          if(use.distmat){
+            new.pt <-  unname(sample(all.nonNA,1))
+          } else {
+            new.pt <- raster::xyFromCell(rast,sample(which(!is.na(raster::values(rast))),1))
+          }
+        }
+        # If using distance matrix and if allow.ident.conspec == FALSE, check new.pt is not the same as any conspecific points, otherwise skip the iteration. If not using distance matrix, check new point is within the study area and if allow.ident.conspec == FALSE, check new.pt is not the same as any conspecific points, otherwise skip the iteration.
+        if(use.distmat){
+          if(new.pt %in% pts[which(pts.species == sp)] & !(allow.ident.conspec)) next
+        } else {
+          if(is.na(raster::extract(rast,new.pt))) next
+          if(nrow(unique(rbind(pts[which(pts.species == sp),],new.pt),1,incomparables = F)) != nrow(rbind(pts[which(pts.species == sp),],new.pt)) & !(allow.ident.conspec)) next
+        }
+        # find next NA point and assign new point to it
+        if(use.distmat){
+          next.pt <- which(is.na(pts))[1]
+          pts[next.pt] <- new.pt
+        } else {
+          next.pt <- which(is.na(pts[,1]))[1]
+          pts[next.pt,] <- new.pt
+        }
+        pts.species[next.pt] <- sp
+        # calculate distances
+        if(use.distmat){
+          dist.pts <- get_dists_from_mat(mat = distmat,indices = pts[which(!is.na(pts))], species.vec=pts.species[which(!is.na(pts.species))],inter.spp=inter.spp,sep.inter.spp=sep.inter.spp,combs=combs)
+        } else {
+          dist.pts <- get_dists(coords=pts[which(!is.na(pts[,1])),],species.vec=pts.species[which(!is.na(pts.species))],dist_meth=dist_meth,dist_fun=dist_fun,inter.spp=inter.spp,sep.inter.spp=sep.inter.spp,combs=combs)
+        }
+        # if any of the distances are outside the range of the real distances, remove the new points
+        dist.wrong <- FALSE
+        for(dis in names(dist.pts)){
+          if(length(dist.pts[[dis]]) > 0){
+           if(min(dist.pts[[dis]]) < min.list[[dis]] | max(dist.pts[[dis]]) > max.list[[dis]]){
+             dist.wrong <- TRUE
+           }
+          }
+        }
+        if(dist.wrong){
+          if(use.distmat){
+            pts[next.pt] <- NA
+          } else {
+            pts[next.pt,] <- NA
+          }
+          pts.species[next.pt] <- NA
+          iter.unchanged <- iter.unchanged+1
+        } else {
+          iter.unchanged <- 0
+        }
+      }
+      # if the loop has ended because the maximum number of iterations for stage 2 has been reached (i.e. restart == TRUE), restart the loop, otherwise it must have ended because a full set of points has been created, so break the loop
+      if(restart){
+        if(verbose) n.restart.2 <- n.restart.2+1
+        next
+      } else {
         break
       }
-      #sample random species
-      sp <- sample(species,1)
-      # skip if enough points have already been generated for the species
-      if(length(which(pts.species == sp)) == len.sp[[sp]]) next
-      # for "dist.obs" or "dist.dens" get an orig.pt and distance
-      if(new.pt.meth.stg.2 == "dist.obs" | new.pt.meth.stg.2 == "dist.dens"){
-        # sample a random starting point from pts, if there is only one then use that rather than attempting to pick one with sample.
-        if(use.distmat){
-          if(length(which(pts.species == sp)) == 1){
-            orig.pt <- pts[which(pts.species == sp)]
-          } else {
-            orig.pt <- pts[sample(which(pts.species == sp),1)]
-          }
-        } else {
-          if(length(which(pts.species == sp)) == 1){
-            orig.pt <- pts[which(pts.species == sp),]
-          } else {
-            orig.pt <- pts[sample(which(pts.species == sp),1),]
-          }
-        }
-        # if not using distmat, sample random bearing
-        if(!use.distmat) bear<-runif(1,0,360)
-        # sample intraspecific distance from real intraspecific distances, either from the vector of distances for "dist.obs", or from the density object for "dist.dens"
-        if(new.pt.meth.stg.2 == "dist.obs"){
-          new.dist <- sample(dist.orig[[paste("intra",sp,sep="_")]],1)
-        } else if (new.pt.meth.stg.2 == "dist.dens"){
-          new.dist <- sample(dist.orig[[paste("intra",sp,sep="_")]],1) + rnorm(1,0,dist.dens.orig[[paste("intra",sp,sep="_")]]$bw)
-        }
-        # generate new point
-        if(use.distmat){
-          # generate a new point by finding the point in distmat whos distance from orig.pt is most similar to new.dist, ties are broken at random.
-          new.pt <- max.col(matrix(0-abs(new.dist - distmat[orig.pt,]),nrow=1))
-        } else {
-          new.pt <- geosphere::destPoint(p=orig.pt,b=bear,d=(new.dist))
-        }
-        # if new.pt.meth.stg.2 == "sample", just sample a random point from the raster
-      } else if (new.pt.meth.stg.2 == "sample"){
-        if(use.distmat){
-          new.pt <-  unname(sample(all.nonNA,1))
-        } else {
-          new.pt <- raster::xyFromCell(rast,sample(which(!is.na(raster::values(rast))),1))
-        }
-      }
-      # If using distance matrix and if allow.ident.conspec == FALSE, check new.pt is not the same as any conspecific points, otherwise skip the iteration. If not using distance matrix, check new point is within the study area and if allow.ident.conspec == FALSE, check new.pt is not the same as any conspecific points, otherwise skip the iteration.
-      if(use.distmat){
-        if(new.pt %in% pts[which(pts.species == sp)] & !(allow.ident.conspec)) next
-      } else {
-        if(is.na(raster::extract(rast,new.pt))) next
-        if(nrow(unique(rbind(pts[which(pts.species == sp),],new.pt),1,incomparables = F)) != nrow(rbind(pts[which(pts.species == sp),],new.pt)) & !(allow.ident.conspec)) next
-      }
-      # find next NA point and assign new point to it
-      if(use.distmat){
-        next.pt <- which(is.na(pts))[1]
-        pts[next.pt] <- new.pt
-      } else {
-        next.pt <- which(is.na(pts[,1]))[1]
-        pts[next.pt,] <- new.pt
-      }
-      pts.species[next.pt] <- sp
-      # calculate distances
-      if(use.distmat){
-        dist.pts <- get_dists_from_mat(mat = distmat,indices = pts[which(!is.na(pts))], species.vec=pts.species[which(!is.na(pts.species))],inter.spp=inter.spp,sep.inter.spp=sep.inter.spp,combs=combs)
-      } else {
-        dist.pts <- get_dists(coords=pts[which(!is.na(pts[,1])),],species.vec=pts.species[which(!is.na(pts.species))],dist_meth=dist_meth,dist_fun=dist_fun,inter.spp=inter.spp,sep.inter.spp=sep.inter.spp,combs=combs)
-      }
-      # if any of the distances are outside the range of the real distances, remove the new points
-      dist.wrong <- FALSE
-      for(dis in names(dist.pts)){
-        if(length(dist.pts[[dis]]) > 0){
-         if(min(dist.pts[[dis]]) < min.list[[dis]] | max(dist.pts[[dis]]) > max.list[[dis]]){
-           dist.wrong <- TRUE
-         }
-        }
-      }
-      if(dist.wrong){
-        if(use.distmat){
-          pts[next.pt] <- NA
-        } else {
-          pts[next.pt,] <- NA
-        }
-        pts.species[next.pt] <- NA
-        iter.unchanged <- iter.unchanged+1
-      } else {
-        iter.unchanged <- 0
-      }
-    }
-    # if the loop has ended because the maximum number of iterations for stage 2 has been reached (i.e. restart == TRUE), restart the loop, otherwise it must have ended because a full set of points has been created, so break the loop
-    if(restart){
-      if(verbose) n.restart.2 <- n.restart.2+1
-      next
-    } else {
-      break
     }
   }
   if(verbose){
@@ -500,229 +509,237 @@ fauxcurrence <-function(coords,rast,distmat=NULL,use.distmat=FALSE,inter.spp=FAL
     cat("completed in ",round(as.numeric(seed.time),2)," ",units(seed.time),"\n","Seed point generation restarted ",n.restart.1," times at stage 1 and ",n.restart.2," times at stage 2.\nIf the number of restarts is high, consider adjusting iter.max.stg1 and iter.max.stg2\n\n",sep="")
   }
   ######## STAGE 2 END
-  # get distances of simulated points
-  if(use.distmat){
-    dist.pts <- get_dists_from_mat(mat=distmat,indices=pts,species.vec=pts.species,inter.spp=inter.spp,sep.inter.spp=sep.inter.spp,combs=combs)
-  } else {
-    dist.pts <- get_dists(coords=pts,species.vec=pts.species,dist_meth=dist_meth,dist_fun=dist_fun,inter.spp=inter.spp,sep.inter.spp=sep.inter.spp,combs=combs)
-  }
-  # get initial divergence between distances for observed and simulated points and breaks
-  div.curr <- rep(NA,length(dist.orig))
-  names(div.curr) <- names(dist.orig)
-  orig.breaks <- list()
-  for(n in names(dist.orig)){
-    div <- KL.div(dist.orig[[n]],dist.pts[[n]],break.num=break.num)
-    div.curr[[n]] <- div[[1]]
-    orig.breaks[[n]] <- div[[2]]
-  }
-  div.curr[["mean"]] <- mean(c(mean(div.curr[grep("inter_",names(div.curr))]),mean(div.curr[grep("intra_",names(div.curr))])),na.rm=T)
-  # set up intervals for recording divergence and points
-  div.int.seq<-seq(0,iter.max.stg3,div.int)
-  div.int.seq[1]<-1
-  # initiate outputs for recording progress of divergence and points
-  div.vecs <- list()
-  for(n in names(dist.orig)){
-    div.vecs[[n]] <- rep(NA,length(div.int.seq))
-    div.vecs[[n]][1] <- div.curr[[n]]
-  }
-  div.vecs[["mean"]] <- rep(NA,length(div.int.seq))
-  div.vecs[["mean"]][1] <- div.curr[["mean"]]
-  # If ret.all.iter and/or ret.seed.points is TRUE, save seed points. If use.distmat is TRUE, convert them back to coordinates first. If ret.all.iter is TRUE, also set up a vector to record Nflat.
-  if(ret.all.iter | ret.seed.pts){
-    if(ret.all.iter) pts.progress <- list()
+  if(stg.1.only==FALSE){
+    # get distances of simulated points
     if(use.distmat){
-      new.coords <- as.data.frame(raster::xyFromCell(rast,all.nonNA.rev[pts]))
-      new.coords$species <- pts.species
-      if(ret.all.iter) pts.progress[[1]] <- new.coords
-      if(ret.seed.pts) out[["seed.pts"]] <- new.coords
+      dist.pts <- get_dists_from_mat(mat=distmat,indices=pts,species.vec=pts.species,inter.spp=inter.spp,sep.inter.spp=sep.inter.spp,combs=combs)
     } else {
-      if(ret.all.iter) pts.progress[[1]] <- cbind(as.data.frame(pts),species=pts.species)
-      if(ret.seed.pts) out[["seed.pts"]] <- cbind(as.data.frame(pts),species=pts.species)
+      dist.pts <- get_dists(coords=pts,species.vec=pts.species,dist_meth=dist_meth,dist_fun=dist_fun,inter.spp=inter.spp,sep.inter.spp=sep.inter.spp,combs=combs)
     }
-    if(ret.all.iter){
-      Nflat.vec <- rep(NA,length(div.int.seq))
-      Nflat.vec[[1]] <- 0
-    }
-  }
-  ######## STAGE 3
-  # set up counters
-  int.num <- 2
-  L <- 1
-  Nflat <- 0
-  if(verbose){
-    cat("Starting stage 3: iterative improvement...")
-    stg.3.start <- Sys.time()
-    progress.seq <- seq(0,iter.max.stg3,iter.max.stg3/10)
-    progress.seq <- progress.seq[2:(length(progress.seq)-1)]
-  }
-  # This loop replaces points, checks if the change improves the fit of interpoint distances to observed interpoint distances, and if so keeps the change. It runs until no improvements have been made for Nflat iterations or iter.max.stg3 has been reached.
-  while(L <= iter.max.stg3 & Nflat <= div.n.flat){
-    if(verbose){
-      if(L %in% progress.seq) cat(L,"...",sep="")
-    }
-    # make new points
-    new.pts<-pts
-    # get random points to replace, do not replace seeded points if used
-    if(is.null(fix.seed.pts)){
-      if(use.distmat){
-        to.replace<-sample(length(pts),switch.n)
-      } else {
-        to.replace<-sample(nrow(pts),switch.n)
-      }
-    } else {
-      if(use.distmat){
-        to.replace<-sample((nrow(fix.seed.pts)+1):length(pts),switch.n)
-      } else {
-        to.replace<-sample((nrow(fix.seed.pts)+1):nrow(pts),switch.n)
-      }
-    }
-    # this loop replaces each point in to.replace with a new point
-    for (P in 1:switch.n) {
-      # for "dist.obs" or "dist.dens" get an orig.pt and distance
-      if(new.pt.meth.stg.3 == "dist.obs" | new.pt.meth.stg.3 == "dist.dens"){
-        # get species
-        my.sp <- pts.species[to.replace[P]]
-        # sample a random starting point from the correct species
-        if(use.distmat){
-          orig.pt <- pts[sample(which(pts.species == my.sp),1)]
-        } else {
-          orig.pt <- pts[sample(which(pts.species == my.sp),1),]
-        }
-        # if not using distmat, sample random bearing
-        if(!use.distmat) bear<-runif(1,0,360)
-        # sample intraspecific distance from real intraspecific distances, either from the vector of distances for "dist.obs", or from the density object for "dist.dens"
-        if(new.pt.meth.stg.3 == "dist.obs"){
-          new.dist <- sample(dist.orig[[paste("intra",my.sp,sep="_")]],1)
-        } else if (new.pt.meth.stg.3 == "dist.dens"){
-          new.dist <- sample(dist.orig[[paste("intra",my.sp,sep="_")]],1) + rnorm(1,0,dist.dens.orig[[paste("intra",my.sp,sep="_")]]$bw)
-        }
-        # generate new point
-        if(use.distmat){
-          # generate a new point by finding the point in distmat whos distance from orig.pt is most similar to new.dist, ties are broken at random.
-          new.pt <- max.col(matrix(0-abs(new.dist - distmat[orig.pt,]),nrow=1))
-        } else {
-          new.pt <- geosphere::destPoint(p=orig.pt,b=bear,d=new.dist)
-        }
-        # if new.pt.meth.stg.3 == "sample", just sample a random point from the raster
-      } else if (new.pt.meth.stg.3 == "sample"){
-        if(use.distmat){
-          new.pt <-  unname(sample(all.nonNA,1))
-        } else {
-          new.pt <- raster::xyFromCell(rast,sample(which(!is.na(raster::values(rast))),1))
-        }
-      }
-      # If using distance matrix and if allow.ident.conspec == FALSE, check new.pt is not the same as any conspecific points, otherwise skip the iteration. If not using distance matrix, check new point is within the study area and if allow.ident.conspec == FALSE, check new.pt is not the same as any conspecific points, otherwise skip the iteration.
-      if(use.distmat){
-        if(new.pt %in% pts[which(pts.species == sp)] & !(allow.ident.conspec)) next
-      } else {
-        if(is.na(raster::extract(rast,new.pt))) next
-        if(nrow(unique(rbind(pts[which(pts.species == sp),],new.pt),1,incomparables = F)) != nrow(rbind(pts[which(pts.species == sp),],new.pt)) & !(allow.ident.conspec)) next
-      }
-      if(use.distmat){
-        new.pts[to.replace[P]] <- new.pt
-      } else {
-        new.pts[to.replace[P],] <- new.pt
-      }
-      # get new distances
-      if(use.distmat){
-        dist.pts <- get_dists_from_mat(mat=distmat,indices=new.pts,species.vec=pts.species,inter.spp=inter.spp,sep.inter.spp=sep.inter.spp,combs=combs)
-      } else {
-        dist.pts <- get_dists(coords=new.pts,species.vec=pts.species,dist_meth=dist_meth,dist_fun=dist_fun,inter.spp=inter.spp,sep.inter.spp=sep.inter.spp,combs=combs)
-      }
-      # if any of the distances are outside the range of the real distances, remove the new point
-      for(dis in names(dist.pts)){
-        if(min(dist.pts[[dis]]) < min.list[[dis]] | max(dist.pts[[dis]]) > max.list[[dis]]){
-          if(use.distmat){
-            new.pts[to.replace[P]] <- pts[to.replace[P]]
-          } else {
-            new.pts[to.replace[P],] <- pts[to.replace[P],]
-          }
-        }
-      }
-    } #P loop
-    # calculate new divergence. If divergence fails, skip iteration
-    div.new <- rep(NA,length(dist.orig))
-    names(div.new) <- names(dist.orig)
-    div.fail <- FALSE
+    # get initial divergence between distances for observed and simulated points and breaks
+    div.curr <- rep(NA,length(dist.orig))
+    names(div.curr) <- names(dist.orig)
+    orig.breaks <- list()
     for(n in names(dist.orig)){
-      div <- try(KL.div(dist.orig[[n]],dist.pts[[n]],break.num=break.num),silent = T)
-      if (class(div)=="try-error"){
-        div.fail <- TRUE
+      div <- KL.div(dist.orig[[n]],dist.pts[[n]],break.num=break.num)
+      div.curr[[n]] <- div[[1]]
+      orig.breaks[[n]] <- div[[2]]
+    }
+    div.curr[["mean"]] <- mean(c(mean(div.curr[grep("inter_",names(div.curr))]),mean(div.curr[grep("intra_",names(div.curr))])),na.rm=T)
+  }
+  if(stg.1.only==FALSE & stg.2.only==FALSE){
+    # set up intervals for recording divergence and points
+    div.int.seq<-seq(0,iter.max.stg3,div.int)
+    div.int.seq[1]<-1
+    # initiate outputs for recording progress of divergence and points
+    div.vecs <- list()
+    for(n in names(dist.orig)){
+      div.vecs[[n]] <- rep(NA,length(div.int.seq))
+      div.vecs[[n]][1] <- div.curr[[n]]
+    }
+    div.vecs[["mean"]] <- rep(NA,length(div.int.seq))
+    div.vecs[["mean"]][1] <- div.curr[["mean"]]
+    # If ret.all.iter and/or ret.seed.points is TRUE, save seed points. If use.distmat is TRUE, convert them back to coordinates first. If ret.all.iter is TRUE, also set up a vector to record Nflat.
+    if(ret.all.iter | ret.seed.pts){
+      if(ret.all.iter) pts.progress <- list()
+      if(use.distmat){
+        new.coords <- as.data.frame(raster::xyFromCell(rast,all.nonNA.rev[pts]))
+        new.coords$species <- pts.species
+        if(ret.all.iter) pts.progress[[1]] <- new.coords
+        if(ret.seed.pts) out[["seed.pts"]] <- new.coords
       } else {
-        div.new[[n]] <- div[[1]]
+        if(ret.all.iter) pts.progress[[1]] <- cbind(as.data.frame(pts),species=pts.species)
+        if(ret.seed.pts) out[["seed.pts"]] <- cbind(as.data.frame(pts),species=pts.species)
+      }
+      if(ret.all.iter){
+        Nflat.vec <- rep(NA,length(div.int.seq))
+        Nflat.vec[[1]] <- 0
       }
     }
-    if(div.fail){
-      if(L%in%div.int.seq){
-        for(n in names(dist.orig)){
-          div.vecs[[n]][int.num] <- div.curr[[n]]
-        }
-        div.vecs[["mean"]][int.num] <- div.curr[["mean"]]
-        if(ret.all.iter){
-          if(use.distmat){
-            pts.progress[[int.num]] <- cbind(as.data.frame(raster::xyFromCell(rast,all.nonNA.rev[pts])),species=pts.species)
-          } else {
-            pts.progress[[int.num]] <- cbind(as.data.frame(pts),species=pts.species)
-          }
-          Nflat.vec[int.num] <- Nflat
-        }
-        int.num <- int.num+1
-      }
-    } else {
-      div.new[["mean"]] <- mean(c(mean(div.new[grep("inter_",names(div.new))]),mean(div.new[grep("intra_",names(div.new))])),na.rm=T)
-      if(div.new[["mean"]] < div.curr[["mean"]]){
-        pts <- new.pts
-        div.curr <- div.new
-      }
-      if(L%in%div.int.seq){
-        for(n in names(dist.orig)){
-          div.vecs[[n]][int.num] <- div.curr[[n]]
-        }
-        div.vecs[["mean"]][int.num] <- div.curr[["mean"]]
-        if(ret.all.iter){
-          if(use.distmat){
-            pts.progress[[int.num]] <- cbind(as.data.frame(raster::xyFromCell(rast,all.nonNA.rev[pts])),species=pts.species)
-          } else {
-            pts.progress[[int.num]] <- cbind(as.data.frame(pts),species=pts.species)
-          }
-          Nflat.vec[int.num] <- Nflat
-        }
-        int.num <- int.num+1
-      }
+    ######## STAGE 3
+    # set up counters
+    int.num <- 2
+    L <- 1
+    Nflat <- 0
+    if(verbose){
+      cat("Starting stage 3: iterative improvement...")
+      stg.3.start <- Sys.time()
+      progress.seq <- seq(0,iter.max.stg3,iter.max.stg3/10)
+      progress.seq <- progress.seq[2:(length(progress.seq)-1)]
     }
-    # update Nflat, div.old and L
-    if(L > 1){
-      if(div.curr[["mean"]] == div.old){
-        Nflat <- Nflat+1
+    # This loop replaces points, checks if the change improves the fit of interpoint distances to observed interpoint distances, and if so keeps the change. It runs until no improvements have been made for Nflat iterations or iter.max.stg3 has been reached.
+    while(L <= iter.max.stg3 & Nflat <= div.n.flat){
+      if(verbose){
+        if(L %in% progress.seq) cat(L,"...",sep="")
+      }
+      # make new points
+      new.pts<-pts
+      # get random points to replace, do not replace seeded points if used
+      if(is.null(fix.seed.pts)){
+        if(use.distmat){
+          to.replace<-sample(length(pts),switch.n)
+        } else {
+          to.replace<-sample(nrow(pts),switch.n)
+        }
       } else {
-        Nflat <- 0
+        if(use.distmat){
+          to.replace<-sample((nrow(fix.seed.pts)+1):length(pts),switch.n)
+        } else {
+          to.replace<-sample((nrow(fix.seed.pts)+1):nrow(pts),switch.n)
+        }
       }
+      # this loop replaces each point in to.replace with a new point
+      for (P in 1:switch.n) {
+        # for "dist.obs" or "dist.dens" get an orig.pt and distance
+        if(new.pt.meth.stg.3 == "dist.obs" | new.pt.meth.stg.3 == "dist.dens"){
+          # get species
+          my.sp <- pts.species[to.replace[P]]
+          # sample a random starting point from the correct species
+          if(use.distmat){
+            orig.pt <- pts[sample(which(pts.species == my.sp),1)]
+          } else {
+            orig.pt <- pts[sample(which(pts.species == my.sp),1),]
+          }
+          # if not using distmat, sample random bearing
+          if(!use.distmat) bear<-runif(1,0,360)
+          # sample intraspecific distance from real intraspecific distances, either from the vector of distances for "dist.obs", or from the density object for "dist.dens"
+          if(new.pt.meth.stg.3 == "dist.obs"){
+            new.dist <- sample(dist.orig[[paste("intra",my.sp,sep="_")]],1)
+          } else if (new.pt.meth.stg.3 == "dist.dens"){
+            new.dist <- sample(dist.orig[[paste("intra",my.sp,sep="_")]],1) + rnorm(1,0,dist.dens.orig[[paste("intra",my.sp,sep="_")]]$bw)
+          }
+          # generate new point
+          if(use.distmat){
+            # generate a new point by finding the point in distmat whos distance from orig.pt is most similar to new.dist, ties are broken at random.
+            new.pt <- max.col(matrix(0-abs(new.dist - distmat[orig.pt,]),nrow=1))
+          } else {
+            new.pt <- geosphere::destPoint(p=orig.pt,b=bear,d=new.dist)
+          }
+          # if new.pt.meth.stg.3 == "sample", just sample a random point from the raster
+        } else if (new.pt.meth.stg.3 == "sample"){
+          if(use.distmat){
+            new.pt <-  unname(sample(all.nonNA,1))
+          } else {
+            new.pt <- raster::xyFromCell(rast,sample(which(!is.na(raster::values(rast))),1))
+          }
+        }
+        # If using distance matrix and if allow.ident.conspec == FALSE, check new.pt is not the same as any conspecific points, otherwise skip the iteration. If not using distance matrix, check new point is within the study area and if allow.ident.conspec == FALSE, check new.pt is not the same as any conspecific points, otherwise skip the iteration.
+        if(use.distmat){
+          if(new.pt %in% pts[which(pts.species == sp)] & !(allow.ident.conspec)) next
+        } else {
+          if(is.na(raster::extract(rast,new.pt))) next
+          if(nrow(unique(rbind(pts[which(pts.species == sp),],new.pt),1,incomparables = F)) != nrow(rbind(pts[which(pts.species == sp),],new.pt)) & !(allow.ident.conspec)) next
+        }
+        if(use.distmat){
+          new.pts[to.replace[P]] <- new.pt
+        } else {
+          new.pts[to.replace[P],] <- new.pt
+        }
+        # get new distances
+        if(use.distmat){
+          dist.pts <- get_dists_from_mat(mat=distmat,indices=new.pts,species.vec=pts.species,inter.spp=inter.spp,sep.inter.spp=sep.inter.spp,combs=combs)
+        } else {
+          dist.pts <- get_dists(coords=new.pts,species.vec=pts.species,dist_meth=dist_meth,dist_fun=dist_fun,inter.spp=inter.spp,sep.inter.spp=sep.inter.spp,combs=combs)
+        }
+        # if any of the distances are outside the range of the real distances, remove the new point
+        for(dis in names(dist.pts)){
+          if(min(dist.pts[[dis]]) < min.list[[dis]] | max(dist.pts[[dis]]) > max.list[[dis]]){
+            if(use.distmat){
+              new.pts[to.replace[P]] <- pts[to.replace[P]]
+            } else {
+              new.pts[to.replace[P],] <- pts[to.replace[P],]
+            }
+          }
+        }
+      } #P loop
+      # calculate new divergence. If divergence fails, skip iteration
+      div.new <- rep(NA,length(dist.orig))
+      names(div.new) <- names(dist.orig)
+      div.fail <- FALSE
+      for(n in names(dist.orig)){
+        div <- try(KL.div(dist.orig[[n]],dist.pts[[n]],break.num=break.num),silent = T)
+        if (class(div)=="try-error"){
+          div.fail <- TRUE
+        } else {
+          div.new[[n]] <- div[[1]]
+        }
+      }
+      if(div.fail){
+        if(L%in%div.int.seq){
+          for(n in names(dist.orig)){
+            div.vecs[[n]][int.num] <- div.curr[[n]]
+          }
+          div.vecs[["mean"]][int.num] <- div.curr[["mean"]]
+          if(ret.all.iter){
+            if(use.distmat){
+              pts.progress[[int.num]] <- cbind(as.data.frame(raster::xyFromCell(rast,all.nonNA.rev[pts])),species=pts.species)
+            } else {
+              pts.progress[[int.num]] <- cbind(as.data.frame(pts),species=pts.species)
+            }
+            Nflat.vec[int.num] <- Nflat
+          }
+          int.num <- int.num+1
+        }
+      } else {
+        div.new[["mean"]] <- mean(c(mean(div.new[grep("inter_",names(div.new))]),mean(div.new[grep("intra_",names(div.new))])),na.rm=T)
+        if(div.new[["mean"]] < div.curr[["mean"]]){
+          pts <- new.pts
+          div.curr <- div.new
+        }
+        if(L%in%div.int.seq){
+          for(n in names(dist.orig)){
+            div.vecs[[n]][int.num] <- div.curr[[n]]
+          }
+          div.vecs[["mean"]][int.num] <- div.curr[["mean"]]
+          if(ret.all.iter){
+            if(use.distmat){
+              pts.progress[[int.num]] <- cbind(as.data.frame(raster::xyFromCell(rast,all.nonNA.rev[pts])),species=pts.species)
+            } else {
+              pts.progress[[int.num]] <- cbind(as.data.frame(pts),species=pts.species)
+            }
+            Nflat.vec[int.num] <- Nflat
+          }
+          int.num <- int.num+1
+        }
+      }
+      # update Nflat, div.old and L
+      if(L > 1){
+        if(div.curr[["mean"]] == div.old){
+          Nflat <- Nflat+1
+        } else {
+          Nflat <- 0
+        }
+      }
+      div.old <- div.curr[["mean"]]
+      L <- L+1
+    } # L loop
+    if(verbose & stg.1.only == FALSE & stg.2.only == FALSE){
+      stg.3.time <- difftime(Sys.time(),stg.3.start,units="secs")
+      cat("completed in",round(as.numeric(stg.3.time),2),units(stg.3.time),"with",L-1,"iterations","\n\n")
+      txtplot::txtplot(1:length(div.vecs[["mean"]])*div.int,div.vecs[["mean"]],height = 12,width=50,xlab = "N iterations",ylab="D")
+      cat("\n")
     }
-    div.old <- div.curr[["mean"]]
-    L <- L+1
-  } # L loop
-  if(verbose){
-    stg.3.time <- difftime(Sys.time(),stg.3.start,units="secs")
-    cat("completed in",round(as.numeric(stg.3.time),2),units(stg.3.time),"with",L-1,"iterations","\n\n")
-    txtplot::txtplot(1:length(div.vecs[["mean"]])*div.int,div.vecs[["mean"]],height = 12,width=50,xlab = "N iterations",ylab="D")
-    cat("\n")
-  }
-  if(verbose & Nflat <= div.n.flat){
-    cat("warning: div.n.flat was not reached, please check D is minimised and consider increasing iter.max.stg3\n")
-  }
-  # trim div.vec and assign to output list
-  for(n in names(div.vecs)){
-    div.vecs[[n]] <- div.vecs[[n]][!is.na(div.vecs[[n]])]
-  }
-  out[["div.vecs"]] <- div.vecs
-  # if ret.all.iter is TRUE, trim Nflat.vec and assign to output list
-  if(ret.all.iter){
-    Nflat.vec <- Nflat.vec[!is.null(Nflat.vec)]
-    out[["Nflat.vec"]] <- Nflat.vec
-    out[["pts.progress"]] <- pts.progress
+    if(verbose & Nflat <= div.n.flat){
+      cat("warning: div.n.flat was not reached, please check D is minimised and consider increasing iter.max.stg3\n")
+    }
+    # trim div.vec and assign to output list
+    for(n in names(div.vecs)){
+      div.vecs[[n]] <- div.vecs[[n]][!is.na(div.vecs[[n]])]
+    }
+    out[["div.vecs"]] <- div.vecs
+    # if ret.all.iter is TRUE, trim Nflat.vec and assign to output list
+    if(ret.all.iter){
+      Nflat.vec <- Nflat.vec[!is.null(Nflat.vec)]
+      out[["Nflat.vec"]] <- Nflat.vec
+      out[["pts.progress"]] <- pts.progress
+    }
+  } else {
+    cat("Skipping stage 3: iterative improvement.\n")
   }
   # assign simulated distances to output list
-  out[["dist.sim"]] <- dist.pts
+  if(stg.1.only == FALSE){
+    out[["dist.sim"]] <- dist.pts
+  }
   # assign final points to output list
   if(use.distmat){
     out[["points"]] <- cbind(as.data.frame(raster::xyFromCell(rast,all.nonNA.rev[pts])),species=pts.species)

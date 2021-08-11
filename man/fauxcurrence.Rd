@@ -18,6 +18,8 @@ fauxcurrence(
   dist_fun = "Haversine",
   trim.init.range = FALSE,
   init.range = 0.9,
+  stg.1.only = FALSE,
+  stg.2.only = FALSE,
   new.pt.meth.stg.2 = "dist.dens",
   new.pt.meth.stg.3 = "dist.dens",
   switch.n = 1,
@@ -58,6 +60,10 @@ fauxcurrence(
 \item{trim.init.range}{Logical indicating whether the initial points generated in stage 1 should be within the central init.range quantile of the observed distribution rather than just the total range. This can speed up stage 2, especially if many species are present.}
 
 \item{init.range}{Numeric between 0 and 1 defining the central range to constrain initial points to if trim.init.range is TRUE.}
+
+\item{stg.1.only}{Produce only one point per species and skip full initial point set generation and iterative improvement.}
+
+\item{stg.2.only}{Produce only the full initial set of points and skip iterative improvement.}
 
 \item{new.pt.meth.stg.2}{String indicating the method of sampling a new point in stage 2. Either "sample", which samples a random point from the raster; "dist.obs" which randomly chooses an existing point and places a new point of the same species \emph{D} distance away, where \emph{D} is sampled from the observed intraspecific distances for that species; or "dist.dens" (recommended) which is similar to dist.obs but \emph{D} is sampled from a density object constructed from the observed intraspecific distances for that species.}
 
