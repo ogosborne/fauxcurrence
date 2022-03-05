@@ -13,9 +13,9 @@
 #' @export
 #' @examples
 #' library(raster)
-#' my.raster <- raster(system.file("external/test.grd", package="raster"))
-#' my.raster[!is.na(my.raster)] <- 1
+#' my.raster <- aggregate(madagascar,10)
 #' my.distmat.overland <- make.distmat(rast=my.raster,dist_meth="costdist")
+#' my.distmat.haversine <- make.distmat(rast=my.raster)
 #' @importFrom geosphere distCosine distGeo distHaversine distm distVincentyEllipsoid distVincentySphere
 #' @export
 make.distmat <- function(rast,dist_meth="distRcpp",dist_fun="Haversine"){
