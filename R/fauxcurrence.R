@@ -244,6 +244,7 @@ gen.dist.pt <- function(use.distmat, distmat, orig.pt, dist, bear){
   } else {
     new.pt <- geosphere::destPoint(p = orig.pt, b = bear, d = dist)
   }
+  colnames(new.pt) <- c("x","y")
   new.pt
 }
 
@@ -332,7 +333,7 @@ coords2indices <- function(all.nonNA, rast, coords){
 
 indices2coords <- function(all.nonNArev, rast, indices, species.vec){
   # get coords from indices and species vector
-  coords <- as.data.frame(raster::xyFromCell(rast,all.nonNA.rev[indices]))
+  coords <- as.data.frame(raster::xyFromCell(rast,all.nonNArev[indices]))
   coords <- cbind(coords,species=species.vec)
   coords
 }
@@ -344,6 +345,7 @@ coords2pts <- function(use.distmat = FALSE, all.nonNA = NULL, rast = NULL, coord
   } else {
     pts <- as.matrix(coords[,c("x","y")])
   }
+  pts
 }
 
 pts2coords <- function(use.distmat = FALSE, all.nonNArev = NULL, rast = NULL, pts, pts.species){
