@@ -243,8 +243,8 @@ gen.dist.pt <- function(use.distmat, distmat, orig.pt, dist, bear){
     new.pt <- max.col(matrix(0-abs(dist - distmat[orig.pt,]), nrow = 1))
   } else {
     new.pt <- geosphere::destPoint(p = orig.pt, b = bear, d = dist)
+    colnames(new.pt) <- c("x","y")
   }
-  colnames(new.pt) <- c("x","y")
   new.pt
 }
 
